@@ -8,12 +8,12 @@ import sqlite3 as sql
 
 DB_PATH = "/tmp/rss.sqlite"
 
-SRC_URLS = ("http://feeds.reuters.com/reuters/technologyNews",
-            "http://rss.cnn.com/rss/cnn_tech",
-            "http://rss.cnn.com/rss/cnn_topstories.rss",
-            "http://www.npr.org/rss/rss.php",
-            "http://rss.csmonitor.com/feeds/csm",
-            "http://feeds.foxnews.com/foxnews/latest",
+SRC_URLS = (("http://feeds.reuters.com/reuters/technologyNews", "Reuters"),
+            ("http://rss.cnn.com/rss/cnn_tech", "CNN"),
+            ("http://rss.cnn.com/rss/cnn_topstories.rss", "CNN"),
+            ("http://www.npr.org/rss/rss.php", "NPR"),
+            ("http://rss.csmonitor.com/feeds/csm", "CSMonitor"),
+            ("http://feeds.foxnews.com/foxnews/latest", "FOX"),
            )
 
 def open_db():
@@ -31,7 +31,7 @@ def create_db():
         cur.execute("DROP TABLE IF EXISTS Article")
         cur.execute("DROP TABLE IF EXISTS State")
 
-        cur.execute("CREATE TABLE Source(id INT, name TEXT, url TEXT, timestamp DATE)")
+        cur.execute("CREATE TABLE Source(id INT, name TEXT, abbrev TEXT, url TEXT, timestamp DATE)")
         cur.execute("CREATE TABLE Article(id INT, title TEXT, url TEXT, source_id INT)")
         cur.execute("CREATE TABLE State(name TEXT, value TEXT)")
 
@@ -39,7 +39,7 @@ def create_db():
 
     return con
 
-def add_source(cur, source_id, source_url):
+def add_source(cur, source_id, source_url, source_initials):
     d = feedparser.parse(source_url)
 
     try:
@@ -47,7 +47,7 @@ def add_source(cur, source_id, source_url):
             updated = d['updated']
         elif 'updated' in d['feed']:
             updated = d['feed']['updated']
-        cur.execute("INSERT INTO Source VALUES(?, ?, ?, ?)", (source_id, d['feed']['title'], source_url, updated))
+        cur.execute("INSERT INTO Source VALUES(?, ?, ?, ?, ?)", (source_id, d['feed']['title'], source_initials, source_url, updated))
     except KeyError as e:
         print(source_url)
         print(repr(d))
@@ -62,7 +62,7 @@ def add_source(cur, source_id, source_url):
 
 def add_sources(cur):
     for id,url in enumerate(SRC_URLS):
-        add_source(cur, id, url)
+        add_source(cur, id, url[0], url[1])
 
 def get_current_article_id(cur):
     cur.execute("SELECT value FROM State WHERE name='current_article'")
@@ -70,9 +70,11 @@ def get_current_article_id(cur):
     return int(data[0])
 
 def get_article_title(cur, id):
-    cur.execute("SELECT title FROM Article WHERE id=?", (str(id),))
+    cur.execute("SELECT title,source_id FROM Article WHERE id=?", (str(id),))
     data = cur.fetchone()
-    return data[0]
+    cur.execute("SELECT abbrev FROM Source WHERE id=?", (str(data[1]),))
+    data2 = cur.fetchone()
+    return data2[0] + "|" + data[0]
 
 def get_article_url(cur, id):
     cur.execute("SELECT url FROM Article WHERE id=?", (str(id),))
