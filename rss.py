@@ -44,10 +44,10 @@ def add_source(cur, source_id, source_url, source_initials):
 
     try:
         if 'updated' in d:
-            updated = d['updated']
-        elif 'updated' in d['feed']:
-            updated = d['feed']['updated']
-        cur.execute("INSERT INTO Source VALUES(?, ?, ?, ?, ?)", (source_id, d['feed']['title'], source_initials, source_url, updated))
+            updated = d.updated
+        elif 'updated' in d.feed:
+            updated = d.feed.updated
+        cur.execute("INSERT INTO Source VALUES(?, ?, ?, ?, ?)", (source_id, d.feed.title, source_initials, source_url, updated))
     except KeyError as e:
         print(source_url)
         print(repr(d))
@@ -56,8 +56,8 @@ def add_source(cur, source_id, source_url, source_initials):
 
     entries = []
     i = get_article_count(cur)
-    for e in d['entries']:
-        cur.execute("INSERT INTO Article VALUES(?, ?, ?, ?)",(i, e['title'], e['link'], source_id))
+    for e in d.entries:
+        cur.execute("INSERT INTO Article VALUES(?, ?, ?, ?)",(i, e.title, e.link, source_id))
         i += 1
 
 def add_sources(cur):
