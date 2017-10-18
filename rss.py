@@ -3,6 +3,8 @@
 import sys
 import os.path
 import random
+import argparse
+import ssl
 import feedparser
 import sqlite3 as sql
 
@@ -14,6 +16,7 @@ SRC_URLS = (("http://feeds.reuters.com/reuters/technologyNews", "Reuters"),
             ("http://www.npr.org/rss/rss.php", "NPR"),
             ("http://rss.csmonitor.com/feeds/csm", "CSMonitor"),
             ("http://feeds.foxnews.com/foxnews/latest", "FOX"),
+            ("https://blogs.unity3d.com/feed/", "Unity"),
            )
 
 def open_db():
@@ -61,6 +64,8 @@ def add_source(cur, source_id, source_url, source_initials):
         i += 1
 
 def add_sources(cur):
+    create_ssl_context()
+
     for id,url in enumerate(SRC_URLS):
         add_source(cur, id, url[0], url[1])
 
@@ -74,7 +79,7 @@ def get_article_title(cur, id):
     data = cur.fetchone()
     cur.execute("SELECT abbrev FROM Source WHERE id=?", (str(data[1]),))
     data2 = cur.fetchone()
-    return data2[0] + "|" + data[0]
+    return data2[0] + " | " + data[0]
 
 def get_article_url(cur, id):
     cur.execute("SELECT url FROM Article WHERE id=?", (str(id),))
@@ -87,19 +92,53 @@ def get_article_count(cur):
         data = cur.fetchone()
         return int(data[0])
 
-def choose_random_article(con, cur):
+def choose_article(con, cur, index):
+    """ Set the current_article index value in the database to index.
+        Return index.
+    """
     with con:
-        new_val = random.randrange(get_article_count(cur))
-        cur.execute("UPDATE State SET value=? WHERE name='current_article'", (str(new_val),))
-    return new_val
+        count = get_article_count(cur)
+        cur.execute("UPDATE State SET value=? WHERE name='current_article'", (str(index % count),))
+    return index
+
+def choose_random_article(con, cur):
+    """ Set the current_article index value in the database to a random
+        number.
+        Return that random number.
+    """
+    new_val = random.randrange(get_article_count(cur))
+    return choose_article(con, cur, new_val)
+
+def choose_next_article(con, cur):
+    return choose_article(con, cur, get_current_article_id(cur) + 1)
+
+def choose_prev_article(con, cur):
+    return choose_article(con, cur, get_current_article_id(cur) - 1)
+
+def create_ssl_context():
+    """ Allow unverified SSL contexts to avoid feedparser throwing a
+        CERTIFICATE_VERIFY_FAILED Exception
+    """
+    if hasattr(ssl, '_create_unverified_context'):
+        ssl._create_default_https_context = ssl._create_unverified_context
 
 #----------------------------------------------------------------------------
 if __name__ == "__main__":
-    if sys.argv[1] == "-h":
-        print("rss [--create] [-t] [-h]")
-        sys.exit(0)
 
-    if sys.argv[1] == "--create":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-c", "--create", action="store_true",
+                        help="(re-)create the feed database")
+    parser.add_argument("-r", "--random", action="store_true",
+                        help="choose random article")
+    parser.add_argument("-u", "--url", action="store_true",
+                        help="print current article URL to stdout")
+    parser.add_argument("-n", "--next", action="store_true",
+                        help="choose the next article")
+    parser.add_argument("-p", "--prev", action="store_true",
+                        help="choose the previous article")
+    args = parser.parse_args()
+
+    if args.create or not os.path.exists(DB_PATH):
         con = create_db()
         with con:
             cur = con.cursor()
@@ -107,18 +146,33 @@ if __name__ == "__main__":
         with con:
             choose_random_article(con, cur)
 
+    if args.create:
         sys.exit(0)
 
     con = open_db()
     cur = con.cursor()
 
-    if sys.argv[1] == "-t":
+    if args.random:
         current_article = choose_random_article(con, cur)
         try:
             print(get_article_title(cur, current_article))
         except TypeError as e:
             print("current_article:", current_article)
             print(e)
-    elif sys.argv[1] == "-u":
+    elif args.next:
+        current_article = choose_next_article(con, cur)
+        try:
+            print(get_article_title(cur, current_article))
+        except TypeError as e:
+            print("current_article:", current_article)
+            print(e)
+    elif args.prev:
+        current_article = choose_prev_article(con, cur)
+        try:
+            print(get_article_title(cur, current_article))
+        except TypeError as e:
+            print("current_article:", current_article)
+            print(e)
+    elif args.url:
         current_article = get_current_article_id(cur)
         print(get_article_url(cur, current_article))
