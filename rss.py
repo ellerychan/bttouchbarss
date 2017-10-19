@@ -10,14 +10,19 @@ import sqlite3 as sql
 
 DB_PATH = "/tmp/rss.sqlite"
 
-SRC_URLS = (("http://feeds.reuters.com/reuters/technologyNews", "Reuters"),
-            ("http://rss.cnn.com/rss/cnn_tech", "CNN"),
+SRC_URLS = (
+            ("http://feeds.reuters.com/reuters/technologyNews", "Reuters"),
+            ("http://rss.cnn.com/rss/cnn_tech", "CNNTech"),
             ("http://rss.cnn.com/rss/cnn_topstories.rss", "CNN"),
             ("http://www.npr.org/rss/rss.php", "NPR"),
             ("http://rss.csmonitor.com/feeds/csm", "CSMonitor"),
             ("http://feeds.foxnews.com/foxnews/latest", "FOX"),
             ("https://blogs.unity3d.com/feed/", "Unity"),
+            ("http://feeds.bbci.co.uk/news/rss.xml", "BBC"),
+            ("http://feeds.feedburner.com/TechCrunch/", "TechCrunch"),
            )
+
+max_summary_len = 60 # chars
 
 def open_db():
     if os.path.exists(DB_PATH):
@@ -38,7 +43,10 @@ def create_db():
         cur.execute("CREATE TABLE Article(id INT, title TEXT, url TEXT, source_id INT)")
         cur.execute("CREATE TABLE State(name TEXT, value TEXT)")
 
+        # The index of the current article being displayed on the show button
         cur.execute("INSERT INTO State VALUES(?, ?)", ("current_article", "0"))
+        # True to freeze the current_article value
+        cur.execute("INSERT INTO State VALUES(?, ?)", ("hold_current", "0"))
 
     return con
 
@@ -60,6 +68,8 @@ def add_source(cur, source_id, source_url, source_initials):
     entries = []
     i = get_article_count(cur)
     for e in d.entries:
+        if not e.title:
+            e.title = e.summary[0:min(len(e.summary), max_summary_len)] + "..."
         cur.execute("INSERT INTO Article VALUES(?, ?, ?, ?)",(i, e.title, e.link, source_id))
         i += 1
 
@@ -69,8 +79,22 @@ def add_sources(cur):
     for id,url in enumerate(SRC_URLS):
         add_source(cur, id, url[0], url[1])
 
+def hold_article(cur):
+    """ Return true if current_article is frozen """
+    cur.execute("SELECT value from State WHERE name=?", ("hold_current",))
+    data = cur.fetchone()
+    return bool(int(data[0]))
+
+def release_hold(cur):
+    """ Remove the hold on the current_article """
+    cur.execute("UPDATE State SET value=? WHERE name=?", ("0", "hold_current"))
+
+def set_hold(cur):
+    """ Remove the hold on the current_article """
+    cur.execute("UPDATE State SET value=? WHERE name=?", ("1", "hold_current"))
+
 def get_current_article_id(cur):
-    cur.execute("SELECT value FROM State WHERE name='current_article'")
+    cur.execute("SELECT value FROM State WHERE name=?", ("current_article",))
     data = cur.fetchone()
     return int(data[0])
 
@@ -99,6 +123,7 @@ def choose_article(con, cur, index):
     with con:
         count = get_article_count(cur)
         cur.execute("UPDATE State SET value=? WHERE name='current_article'", (str(index % count),))
+        release_hold(cur)
     return index
 
 def choose_random_article(con, cur):
@@ -106,14 +131,21 @@ def choose_random_article(con, cur):
         number.
         Return that random number.
     """
-    new_val = random.randrange(get_article_count(cur))
+    if hold_article(cur):
+        new_val = get_current_article_id(cur)
+    else:
+        new_val = random.randrange(get_article_count(cur))
     return choose_article(con, cur, new_val)
 
 def choose_next_article(con, cur):
-    return choose_article(con, cur, get_current_article_id(cur) + 1)
+    article_id = choose_article(con, cur, get_current_article_id(cur) + 1)
+    set_hold(cur)
+    return article_id
 
 def choose_prev_article(con, cur):
-    return choose_article(con, cur, get_current_article_id(cur) - 1)
+    article_id = choose_article(con, cur, get_current_article_id(cur) - 1)
+    set_hold(cur)
+    return article_id
 
 def create_ssl_context():
     """ Allow unverified SSL contexts to avoid feedparser throwing a
