@@ -6,3 +6,4 @@ I will add how to configure this in the TouchBar section of the BTT Preferences 
 Here is an annotated screenshot:
 ![Setting up TouchBar Preferences](docs/img/btt_config_annotated.png)
 
+I did this a while ago, but IIRC, I had to add the `Close currently open Touch Bar group` actions to get things to refresh properly.
