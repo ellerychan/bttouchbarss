@@ -34,6 +34,7 @@ SRC_URLS = (
             ("https://blogs.unity3d.com/feed/", "Unity"),
             ("http://feeds.bbci.co.uk/news/rss.xml", "BBC"),
             ("http://feeds.feedburner.com/TechCrunch/", "TechCrunch"),
+            ("https://www.xyht.com/feed", "xyHt"),
            )
 
 class RssDb:
