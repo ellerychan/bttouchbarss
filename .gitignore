@@ -3,3 +3,5 @@ env
 .pyc
 .project
 .pydevproject
+
+.vscode/
