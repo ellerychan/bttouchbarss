@@ -1,6 +1,7 @@
-#!python3
+#!/usr/bin/env python3
 
 import sys
+import datetime
 import os.path
 import random
 import argparse
@@ -21,7 +22,7 @@ logging.basicConfig(
 DB_PATH = "/tmp/rss.sqlite"
 WEB_PATH = "/tmp/rss.html"
 MAX_SUMMARY_LEN = 60 # chars
-MAX_HISTORY = 20 # article ids
+MAX_HISTORY = 50 # article ids
 
 
 SRC_URLS = (
@@ -34,10 +35,18 @@ SRC_URLS = (
             ("https://blogs.unity3d.com/feed/", "Unity"),
             ("http://feeds.bbci.co.uk/news/rss.xml", "BBC"),
             ("http://feeds.feedburner.com/TechCrunch/", "TechCrunch"),
-           )
+            ("https://www.xyht.com/feed", "xyHt"),
+            ("https://www.linuxjournal.com/node/feed", "Linux Journal"),
+            ("https://medium.com/feed/one-zero", "Medium One-Zero"),
+            ("https://medium.com/feed/topic/technology", "Medium Tech"),
+            ("https://medium.com/feed/topic/programming", "Medium Programming"),
+            ("https://medium.com/feed/topic/science", "Medium Science"),
+            ("https://www.technologyreview.com/stories.rss", "MIT Tech Review"),
+            ("http://feeds.feedburner.com/AllDiscovermagazinecomContent", "Discover"),
+)
 
 class RssDb:
-    
+
     def __init__(self, db_path=DB_PATH, force_create=False):
         self.db_path = db_path
         if force_create or not os.path.exists(self.db_path):
@@ -45,38 +54,39 @@ class RssDb:
         else:
             self.conn = self.open_db()
         self.cur = self.conn.cursor()
-        
+
     def open_db(self):
         if os.path.exists(self.db_path):
             return sql.connect(self.db_path)
         else:
             return self.create_db()
-    
+
     def create_db(self):
         con = sql.connect(self.db_path)
-    
+
         with con:
             self.cur = con.cursor()
             self.cur.execute("DROP TABLE IF EXISTS Source")
             self.cur.execute("DROP TABLE IF EXISTS Article")
             self.cur.execute("DROP TABLE IF EXISTS State")
-    
+
             self.cur.execute("CREATE TABLE Source(id INT PRIMARY KEY, name TEXT, abbrev TEXT, url TEXT, timestamp DATE)")
             self.cur.execute("CREATE TABLE Article(id INT PRIMARY KEY, title TEXT, url TEXT, source_id INT, FOREIGN KEY (source_id) REFERENCES Source(id))")
             self.cur.execute("CREATE TABLE State(name TEXT PRIMARY KEY, value TEXT)")
-    
+
             # The index of the current article being displayed on the show button
             self.cur.executemany("INSERT INTO State VALUES(?, ?)", (("current_index", "0"),
                                                                 ("hold_current", "0"),
                                                                 ("history", "0"),
                                                                 ))
-    
+
         return con
-    
+
     def add_source(self, source_id, source_url, source_initials):
         d = feedparser.parse(source_url)
-    
+
         try:
+            updated = datetime.datetime.now()
             if 'updated' in d:
                 updated = d.updated
             elif 'updated' in d.feed:
@@ -88,7 +98,7 @@ class RssDb:
             print(repr(d))
             print(str(e))
             sys.exit(1)
-    
+
         articles = []
         i = self.get_article_count()
         for e in d.entries:
@@ -98,44 +108,44 @@ class RssDb:
             i += 1
         with self.conn:
             self.cur.executemany("INSERT INTO Article VALUES(?, ?, ?, ?)", articles)
-    
+
     def add_sources(self):
         self.create_ssl_context()
-    
+
         for id,url in enumerate(SRC_URLS):
             self.add_source(id, url[0], url[1])
-    
+
     def hold_article(self):
         """ Return true if current_index is frozen """
         self.cur.execute("SELECT value from State WHERE name='hold_current'")
         data = self.cur.fetchone()
         return bool(int(data[0]))
-    
+
     def release_hold(self):
         """ Remove the hold on the current_index """
         with self.conn:
             self.cur.execute("UPDATE State SET value=0 WHERE name='hold_current'")
-    
+
     def set_hold(self):
         """ Remove the hold on the current_index """
         with self.conn:
             self.cur.execute("UPDATE State SET value=1 WHERE name='hold_current'")
-    
+
     def get_current_article_index(self):
         self.cur.execute("SELECT value FROM State WHERE name='current_index'")
         data = self.cur.fetchone()
         return int(data[0])
-    
+
     def set_current_index(self, index):
         index = min(index, len(self.get_history())-1)
         with self.conn:
             self.cur.execute("UPDATE State SET value=? WHERE name='current_index'", (str(index),))
-    
+
     def get_current_article_id(self):
         articles = self.get_history()
         index = self.get_current_article_index()
         return int(articles[index])
-    
+
     def get_article_title(self):
         id = self.get_current_article_id()
         self.cur.execute("SELECT title,source_id FROM Article WHERE id=?", (str(id),))
@@ -143,41 +153,41 @@ class RssDb:
         self.cur.execute("SELECT abbrev FROM Source WHERE id=?", (str(data[1]),))
         data2 = self.cur.fetchone()
         return data2[0] + " | " + data[0]
-    
+
     def get_article_url(self):
         id = self.get_current_article_id()
         self.cur.execute("SELECT url FROM Article WHERE id=?", (str(id),))
         data = self.cur.fetchone()
         return data[0]
-    
+
     def get_source_count(self):
         self.cur.execute("SELECT count() FROM Source")
         data = self.cur.fetchone()
         return int(data[0])
-    
+
     def get_article_count(self):
         self.cur.execute("SELECT count() FROM Article")
         data = self.cur.fetchone()
         return int(data[0])
-    
+
     def in_history(self):
         """ Return True if the current article is not the last item
             in the history list.
         """
         return self.get_current_article_index() != 0
-    
+
     def get_history(self):
         """ Return article history as an array of strings """
         self.cur.execute("SELECT value FROM State WHERE name='history'")
         return self.cur.fetchone()[0].split()
-        
+
     def add_to_history(self, new_article):
         """ Append new_article id to article_history """
         articles = [str(new_article)] + self.get_history()[0:MAX_HISTORY-1]  # only save last MAX_HISTORY ids
         with self.conn:
             self.cur.execute("UPDATE State SET value=? WHERE name='history'", (" ".join(articles),))
         self.set_current_index(0)
-    
+
     def choose_random_article(self):
         """ Set the current_article index value in the database to a random
             number.
@@ -188,31 +198,31 @@ class RssDb:
 #        else:
             new_val = random.randrange(self.get_article_count())
             self.add_to_history(new_val)
-    
+
     def choose_next_article(self):
         self.set_current_index(max(self.get_current_article_index() - 1, 0))
-    
+
     def choose_prev_article(self):
         self.set_current_index(min(self.get_current_article_index() + 1, MAX_HISTORY))
-    
+
     def create_ssl_context(self):
         """ Allow unverified SSL contexts to avoid feedparser throwing a
             CERTIFICATE_VERIFY_FAILED Exception
         """
         if hasattr(ssl, '_create_unverified_context'):
             ssl._create_default_https_context = ssl._create_unverified_context
-    
+
     def create_web_page(self):
         """ Output the database contents as HTML """
         html_page = '<html><head>RSS Feeds</head><body>{}</body></html>'
         html = ''
-        
+
         # Get (id INT PRIMARY KEY, name TEXT, abbrev TEXT, url TEXT, timestamp DATE)
         Source = namedtuple("Source", "id name abbrev url timestamp")
         Article = namedtuple("Article", "id title url source_id")
-        
+
         self.cur.execute("SELECT * from Source")
-        
+
         for src in [Source(*s) for s in self.cur.fetchall()]:
             html += '<div class="source">\n'
             html += '<h2><a href="{}">{}</a> | {}</h2>\n'.format(src.url, src.abbrev, src.name)
@@ -227,7 +237,7 @@ class RssDb:
             html += '</div>\n'
         html_page = html_page.format(html)
         return html_page
-        
+
     def show_debug_info(self):
         print("database contains {} articles".format(self.get_article_count()))
         print("current_index={}".format(self.get_current_article_index()))
@@ -255,8 +265,12 @@ if __name__ == "__main__":
                         help="output the database contents as a web page to {}".format(WEB_PATH))
     parser.add_argument("-d", "--debug", action="store_true",
                         help="show database status information on stdout for debugging")
+    parser.add_argument("-db", "--db", nargs=1, required=False,
+                        help="use an alternate database (useful for debugging)")
     args = parser.parse_args()
 
+    if 'db' in args and args.db:
+        DB_PATH = args.db
 
     if args.create or not os.path.exists(DB_PATH):
         # Create or recreate and repopulate the database
@@ -296,10 +310,14 @@ if __name__ == "__main__":
             db.choose_random_article()
             db.set_hold() # assert hold to overcome a spurious -r fetch
         logging.info("Choosing next article in history ({})".format(db.get_current_article_id()))
+        # title = db.get_article_title()
+        # print(title)
     elif args.prev:
         db.choose_prev_article()
         db.set_hold()
         logging.info("Choosing prev article in history ({})".format(db.get_current_article_id()))
+        # title = db.get_article_title()
+        # print(title)
     elif args.webpage:
         with open(WEB_PATH, "w") as html_out:
             html_out.write(db.create_web_page())
