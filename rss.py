@@ -42,7 +42,11 @@ SRC_URLS = (
             ("https://medium.com/feed/topic/programming", "Medium Programming"),
             ("https://medium.com/feed/topic/science", "Medium Science"),
             ("https://www.technologyreview.com/stories.rss", "MIT Tech Review"),
+            ("https://news.mit.edu/rss", "MIT News"),
             ("http://feeds.feedburner.com/AllDiscovermagazinecomContent", "Discover"),
+            ("https://www.techradar.com/rss", "TechRadar"),
+            ("https://hexus.net/rss", "Hexus"),
+            ("http://www.linux-magazine.com/rss/feed/lmi_news", "Linux Magazine"),
 )
 
 class RssDb:
@@ -152,7 +156,8 @@ class RssDb:
         data = self.cur.fetchone()
         self.cur.execute("SELECT abbrev FROM Source WHERE id=?", (str(data[1]),))
         data2 = self.cur.fetchone()
-        return data2[0] + " | " + data[0]
+        return "[" + str(id) + "/" + str(self.get_article_count()) + "] " + data2[0] + " | " + data[0]
+        # return data2[0] + " | " + data[0]
 
     def get_article_url(self):
         id = self.get_current_article_id()
