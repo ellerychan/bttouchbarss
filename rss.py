@@ -47,6 +47,7 @@ SRC_URLS = (
             ("https://www.techradar.com/rss", "TechRadar"),
             ("https://hexus.net/rss", "Hexus"),
             ("http://www.linux-magazine.com/rss/feed/lmi_news", "Linux Magazine"),
+            ("https://www.esri.com/about/newsroom/feed", "Esri Newsroom"),
 )
 
 class RssDb:
